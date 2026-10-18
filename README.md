@@ -4,6 +4,9 @@
 (−0.82 percentage points, p = 0.002), and nothing in the data shows an upside. Before treating the *size* of that
 effect as final, I would fix the uneven group split that the data check below turned up.
 
+**The bigger lever sits earlier than any gate:** a quarter of players play 4 rounds or fewer, and their day-7
+retention is about 1%. That is where I would run the next experiment.
+
 | | Gate at level 30 (control) | Gate at level 40 (test) | Effect (40 − 30) | 95% CI | p |
 |---|---|---|---|---|---|
 | Day-7 retention | 19.02% | 18.20% | **−0.82 pp** (−4.3% relative) | −1.33 to −0.31 pp | 0.002 |
@@ -48,7 +51,8 @@ should look alike.
   (p < 0.001), against −43 among players with 30+ rounds (p = 0.81, a normal split).
 - In that under-30 group, where the gate cannot have changed anything, day-7 retention is still 0.33 pp lower in
   the test group (4.26% vs 3.93%, p = 0.049). The gate cannot have caused it, so it most likely reflects *who*
-  ended up in each group.
+  ended up in each group. (p = 0.049 is borderline and this is one of several checks, so I read it as supporting
+  evidence for the split problem, not as proof on its own.)
 
 **What this means:** part of the headline −0.82 pp may come from the uneven split rather than from the gate. The
 cleaner comparison is among players with 30+ rounds, where the two groups are balanced.
@@ -68,6 +72,22 @@ cleaner comparison is among players with 30+ rounds, where the two groups are ba
 ![Day-7 retention by segment](figures/day7_by_segment.png)
 
 ![Players by game rounds played](figures/rounds_distribution.png)
+
+## Beyond the gate: where players are actually lost
+
+The gate decision moves day-7 retention by less than 1 point. The same data shows where much larger numbers sit:
+
+![Day-7 retention by game rounds played](figures/retention_by_engagement.png)
+
+- **24% of players play 4 rounds or fewer** (4% never play a single round). Their day-7 retention is about 1%.
+- **Retention climbs with every band:** 6% of players with 10-19 rounds come back on day 7, 18% at 30-49 rounds and
+  61% at 100-199 rounds.
+- **Day 1 predicts day 7:** players who come back on day 1 have day-7 retention of 33%, against 7% for those who
+  don't.
+
+This is correlation, not cause: players who like the game both play more and come back, so these numbers do not
+prove that more rounds create retention. What they do show is where to look: most of the loss happens in the first few
+rounds, long before the first gate, so that is where the next experiment should go.
 
 ## Recommendation
 
@@ -92,12 +112,20 @@ they return).
 - **No level data.** Game rounds include failed attempts, so "30+ rounds" means *could* have reached level 30,
   not *did*.
 - **Only day-1 and day-7 retention.** Longer windows (day 14, day 30) would show whether the gap grows or fades.
+- **The game-rounds window is not documented consistently.** Different copies of the dataset describe
+  `sum_gamerounds` as covering the first week or the first 14 days after install.
 
-## Next experiment I would propose
+## What I would test next
 
-Leave the gate at level 30 and test **the gate itself**: for example a shorter wait time, or a free first unlock.
-That tests the "break" explanation directly. Primary metric: day-7 retention. Guardrails: revenue per player and
-day-30 retention. Run it after the split issue is fixed, with about 97,000 players per group.
+Both tests should run after the split issue is fixed.
+
+1. **First session (bigger potential).** Hypothesis: if the first levels feel more rewarding, for example easier
+   opening levels or an early reward, more players get past their first 5 rounds and come back. Primary metric:
+   day-1 retention. Secondary: rounds in the first session and day-7 retention. Guardrails: revenue per player and
+   day-30 retention. Size: about 39,000 players per group to detect a 1-point change in day-1 retention.
+2. **The gate itself.** Keep the gate at level 30 and change how it works, for example a shorter wait time or a
+   free first unlock. That tests the "break" explanation directly. Primary metric: day-7 retention, with the same
+   guardrails. Size: about 97,000 players per group to detect a 0.5-point change.
 
 ## How to run it
 
@@ -110,7 +138,8 @@ python3 analysis.py
 
 `analysis.py` prints the summary, writes every number to `results.json` and redraws the charts in `figures/`.
 Methods: two-proportion z-tests with 95% confidence intervals, a 20,000-resample bootstrap, a chi-square sample
-ratio check, a Mann-Whitney test for game rounds, and a power calculation for the minimum detectable effect.
+ratio check, a Mann-Whitney test for game rounds, retention by engagement band, and power calculations for the
+minimum detectable effect and the size of follow-up tests.
 
 ## Credits
 

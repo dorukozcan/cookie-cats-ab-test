@@ -181,7 +181,7 @@ def column_chart(path: Path, groups_of_bars: list[tuple[str, dict]], main: str, 
 def bootstrap_chart(path: Path, results: dict) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(8.0, 3.8), dpi=160, sharey=False)
     fig.patch.set_facecolor(SURFACE)
-    fig.subplots_adjust(top=0.66, bottom=0.14, left=0.04, right=0.98, wspace=0.12)
+    fig.subplots_adjust(top=0.60, bottom=0.14, left=0.04, right=0.98, wspace=0.12)
     for ax, metric in zip(axes, METRICS):
         style_axes(ax, grid_axis="x")
         res = results[metric]
@@ -197,9 +197,11 @@ def bootstrap_chart(path: Path, results: dict) -> None:
         ax.set_yticks([])
         ax.set_ylim(0, ys.max() * 1.25)
         ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:+.1f} pp" if v else "0"))
-        ax.text(0.0, 1.17, METRICS[metric], transform=ax.transAxes, ha="left", va="bottom", fontsize=11,
+        ax.text(0.0, 1.27, METRICS[metric], transform=ax.transAxes, ha="left", va="bottom", fontsize=11,
                 fontweight="bold", color=INK)
-        ax.text(0.0, 1.03, f"P(gate 40 is worse) = {res['prob_gate40_worse']:.1%}  ·  95% interval {lo:+.2f} to {hi:+.2f} pp",
+        ax.text(0.0, 1.14, f"Gate 40 worse in {res['prob_gate40_worse']:.1%} of resamples",
+                transform=ax.transAxes, ha="left", va="bottom", fontsize=9.5, color=INK2)
+        ax.text(0.0, 1.03, f"95% interval {lo:+.2f} to {hi:+.2f} pp",
                 transform=ax.transAxes, ha="left", va="bottom", fontsize=9.5, color=INK2)
     title(fig, "Moving the gate to level 40 lowers day-7 retention",
           f"Bootstrap distribution of the effect (gate 40 minus gate 30), {N_BOOT:,} resamples; "
@@ -253,6 +255,26 @@ def split_chart(path: Path, split: dict) -> None:
     ax.set_xticks([])
     title(fig, "Data check: the test group's extra players never reached a gate",
           "Test-group headcount minus control-group headcount, by how far players got")
+    fig.savefig(path, facecolor=SURFACE)
+    plt.close(fig)
+
+
+def engagement_chart(path: Path, funnel: list[dict]) -> None:
+    """Day-7 retention by game rounds played. One neutral series: this is all players, not a group comparison."""
+    fig, ax = new_figure(height=4.8)
+    fig.subplots_adjust(top=0.78, bottom=0.24, left=0.08, right=0.97)
+    n = len(funnel)
+    ax.set_xlim(-0.6, n - 0.4)
+    ax.set_ylim(0, 100)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(decimals=0))
+    ax.set_xticks(range(n), [f"{b['rounds']}\n{b['share']:.0%} of\nplayers" for b in funnel], fontsize=9)
+    for i, b in enumerate(funnel):
+        v = b["day7"] * 100
+        rounded_column(ax, i, 0.42, v, INK2)
+        ax.text(i, v + 1.5, f"{v:.0f}%" if v >= 10 else f"{v:.1f}%", ha="center", va="bottom", fontsize=10, color=INK)
+    ax.set_xlabel("Game rounds played", fontsize=10, color=INK2, labelpad=6)
+    title(fig, "Where players are lost: the first few rounds",
+          "Day-7 retention by game rounds played, all 90,189 players; each label shows the share of players in that band")
     fig.savefig(path, facecolor=SURFACE)
     plt.close(fig)
 
@@ -316,6 +338,27 @@ def main() -> None:
         out["segments"]["split"][name] = {"counts": {g: int(c[g]) for g in GROUPS},
                                           "extra_test_players": int(c[TEST] - c[CONTROL]),
                                           "srm_p_value": float(stats.chisquare(c.values)[1])}
+    # 5. Beyond the gate: how retention climbs with early engagement (all players, both groups).
+    #    Correlation only: players who enjoy the game both play more and come back.
+    bands = [(0, 0, "0"), (1, 4, "1-4"), (5, 9, "5-9"), (10, 19, "10-19"), (20, 29, "20-29"),
+             (30, 49, "30-49"), (50, 99, "50-99"), (100, 199, "100-199"), (200, np.inf, "200+")]
+    funnel = []
+    for lo, hi, label in bands:
+        m = df["sum_gamerounds"].between(lo, hi)
+        funnel.append({"rounds": label, "players": int(m.sum()), "share": float(m.mean()),
+                       "day1": float(df.loc[m, "retention_1"].mean()), "day7": float(df.loc[m, "retention_7"].mean())})
+    few = df["sum_gamerounds"] <= 4
+    p1 = results["retention_1"]["rate"][CONTROL]
+    out["engagement"] = {
+        "bands": funnel,
+        "share_4_rounds_or_fewer": float(few.mean()),
+        "share_zero_rounds": float((df["sum_gamerounds"] == 0).mean()),
+        "day7_4_rounds_or_fewer": float(df.loc[few, "retention_7"].mean()),
+        "day7_if_back_on_day1": float(df.loc[df["retention_1"], "retention_7"].mean()),
+        "day7_if_not_back_on_day1": float(df.loc[~df["retention_1"], "retention_7"].mean()),
+        # players per group an onboarding test needs to detect a +1 pp change in day-1 retention
+        "n_per_group_onboarding_test_1pp_day1": int(np.ceil(2 * (Z_CRIT + Z_POWER) ** 2 * p1 * (1 - p1) / 0.01 ** 2)),
+    }
     (ROOT / "results.json").write_text(json.dumps(out, indent=2))
 
     # Charts
@@ -331,6 +374,7 @@ def main() -> None:
                  "Players who could reach a gate show the same ~0.9 pp drop",
                  "Day-7 retention by how far players got; the 30+ group is smaller, so its CI is wider", ymax=60)
     split_chart(FIGS / "split_check.png", out["segments"]["split"])
+    engagement_chart(FIGS / "retention_by_engagement.png", funnel)
 
     # Console summary
     s = out["split"]
@@ -339,13 +383,18 @@ def main() -> None:
     for m, res in out["retention"].items():
         print(f"{METRICS[m]:16s} control {res['rate'][CONTROL]:.2%}  test {res['rate'][TEST]:.2%}  "
               f"effect {res['effect_pp']:+.2f} pp [{res['ci95_effect_pp'][0]:+.2f}, {res['ci95_effect_pp'][1]:+.2f}]  "
-              f"p = {res['p_value']:.4f}  P(test worse) = {res['prob_gate40_worse']:.1%}  MDE {res['mde_pp']:.2f} pp")
+              f"p = {res['p_value']:.4f}  test worse in {res['prob_gate40_worse']:.1%} of resamples  MDE {res['mde_pp']:.2f} pp")
     for name, seg_res in segments.items():
         res = seg_res["retention_7"]
         print(f"Day-7, {name:16s} n = {sum(res['n'].values()):,}  effect {res['effect_pp']:+.2f} pp  p = {res['p_value']:.4f}")
     for name, sp in out["segments"]["split"].items():
         print(f"Split, {name:16s} control {sp['counts'][CONTROL]:,}  test {sp['counts'][TEST]:,}  "
               f"extra test players {sp['extra_test_players']:+,}  SRM p = {sp['srm_p_value']:.4f}")
+    e = out["engagement"]
+    print("Day-7 by rounds: " + "  ".join(f"{b['rounds']}: {b['day7']:.1%}" for b in e["bands"]))
+    print(f"{e['share_4_rounds_or_fewer']:.1%} of players played 4 rounds or fewer (day-7 {e['day7_4_rounds_or_fewer']:.1%}); "
+          f"day-7 {e['day7_if_back_on_day1']:.1%} if back on day 1 vs {e['day7_if_not_back_on_day1']:.1%}; "
+          f"onboarding test needs {e['n_per_group_onboarding_test_1pp_day1']:,} players per group for +1 pp day-1")
     rd = out["rounds"]
     print(f"Rounds median control {rd[CONTROL]['median']:.0f} / test {rd[TEST]['median']:.0f}  "
           f"(Mann-Whitney p = {rd['mann_whitney_p_value']:.3f}); top player {rd['top_player']}")
